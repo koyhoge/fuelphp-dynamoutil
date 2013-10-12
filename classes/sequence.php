@@ -4,14 +4,16 @@ namespace DynamoUtil;
 
 use Aws\DynamoDb\Enum\AttributeAction;
 use Aws\DynamoDb\Enum\Type;
+use Aws\DynamoDb\Enum\KeyType;
 use Aws\DynamoDb\Enum\ReturnValue;
 
 class Sequence extends TableBase
 {
     const SEQ_ITEM_ID = 1;
-    
-    protected $keySchema = array(
-        'HashKeyElement' => array(
+
+    protected $keyAttrs = array(
+        array(
+            'KeyType' => KeyType::HASH,
             'AttributeName' => 'id',
             'AttributeType' => Type::NUMBER,
             ),
@@ -40,6 +42,7 @@ class Sequence extends TableBase
         $params = array(
             'TableName' => $this->tableName,
             'KeySchema' => $this->keySchema,
+            'AttributeDefinitions' => $this->attributeDefinitions,
             'ProvisionedThroughput' => array(
                 'ReadCapacityUnits' => $read_cap,
                 'WriteCapacityUnits' => $write_cap,

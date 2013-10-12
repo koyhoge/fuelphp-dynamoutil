@@ -6,6 +6,7 @@ use Aws\DynamoDb\Enum\AttributeAction;
 use Aws\DynamoDb\Enum\ComparisonOperator;
 use Aws\DynamoDb\Enum\ReturnValue;
 use Aws\DynamoDb\Model\Attribute;
+use Aws\DynamoDb\Exception\ValidationException;
 
 class TableBase
 {
@@ -13,15 +14,22 @@ class TableBase
 
     protected $tableName = null;
     protected $keySchema = null;
-    protected $attributes = null;
+    protected $attributeDefinitions = null;
 
     protected $description = null;
+
+    // simple format to define keys
+    protected $keyAttrs = null;
 
     public function __construct($name = null)
     {
         $this->dynamodb = DynamoUtil::getDynamo();
         if (empty($this->tableName) && $name !== null) {
             $this->tableName = $name;
+        }
+
+        if (!empty($this->keyAttrs)) {
+            $this->setupSchemaByAttr();
         }
 
         if (empty($this->keySchema)) {
@@ -38,6 +46,7 @@ class TableBase
         $opts = array(
             'TableName' => $this->tableName,
             'KeySchema' => $this->keySchema,
+            'AttributeDefinitions' => $this->attributeDefinitions,
             'ProvisionedThroughput' => $tput,
             'wait' => true,
             );
@@ -48,6 +57,36 @@ class TableBase
     {
         $this->describe(true);
         $this->keySchema = $this->description['KeySchema'];
+        $this->attributeDefinitions = $this->description['AttributeDefinitions'];
+    }
+
+    public function setupSchemaByAttr()
+    {
+        $attrs = $this->keyAttrs;
+        if (empty($attrs)) {
+            // do nothing
+            return;
+        }
+
+        $keySchema = $attrDefs = array();
+        foreach ($attrs as $attr) {
+            $keyType = $attr['KeyType'];
+            $attributeName = $attr['AttributeName'];
+            $attributeType = $attr['AttributeType'];
+
+            $attrDefs[] = array(
+                'AttributeName' => $attributeName,
+                'AttributeType' => $attributeType,
+                );
+
+            $keySchema[] = array(
+                'AttributeName' => $attributeName,
+                'KeyType' => $keyType,
+                );
+        }
+
+        $this->keySchema = $keySchema;
+        $this->attributeDefinitions = $attrDefs;
     }
 
     public function describe($update = false)
@@ -308,34 +347,21 @@ class TableBase
 
     protected function getQueryKeyParams($keys)
     {
-        static $keysym = array(
-            'HashKeyElement' => 'HashKeyValue',
-            'RangeKeyElement' => 'RangeKeyCondition',
-            );
-
         $conds = array();
         foreach ($keys as $name => $val) {
-            $keytype = $this->getKeyType($name);
-            $condtype = $keysym[$keytype];
-            
-            if ($keytype === 'HashKeyElement') {
-                $params = $this->dynamodb->formatValue($val);
-            } else {
-                $params = $this->genCondParams($val);
-            }
-            $conds[$condtype] = $params;
+            $conds[$name] = $this->genCondParams($val);
         }
-        return $conds;
+        return array('KeyConditions' => $conds);
     }
 
     protected function getKeyParams($keys, $format = null)
     {
         $attrs = array();
         foreach ($keys as $name => $val) {
-            $keytype = $this->getKeyType($name);
-            $attrs[$keytype] = $val;
+            $attrtype = $this->getAttributeType($name);
+            $attrs[$name] = array($attrtype => (string)$val);
         }
-        return $this->dynamodb->formatAttributes($attrs, $format);
+        return $attrs;
     }
 
     protected function getKeyType($name)
@@ -344,9 +370,23 @@ class TableBase
             throw new Exception('Empty keySchema');
         }
 
-        foreach ($this->keySchema as $keytype => $params) {
+        foreach ($this->keySchema as $params) {
             if ($name === $params['AttributeName']) {
-                return $keytype;
+                return $params['KeyType'];
+            }
+        }
+        throw new Exception('Key name not found: ' . $name);
+    }
+
+    protected function getAttributeType($name)
+    {
+        if (empty($this->attributeDefinitions)) {
+            throw new Exception('Empty attributeDefinitions');
+        }
+
+        foreach ($this->attributeDefinitions as $params) {
+            if ($name === $params['AttributeName']) {
+                return $params['AttributeType'];
             }
         }
         throw new Exception('Key name not found: ' . $name);

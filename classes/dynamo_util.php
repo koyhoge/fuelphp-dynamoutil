@@ -53,6 +53,7 @@ class DynamoUtil
     {
         $table = array_val($options, 'TableName');
         $schema = array_val($options, 'KeySchema');
+        $attrs = array_val($options, 'AttributeDefinitions');
         $tput = array_val($options, 'ProvisionedThroughput', 1);
         $wait = array_val($options, 'wait', false);
 
@@ -70,6 +71,7 @@ class DynamoUtil
         $params = array(
             'TableName' => $table,
             'KeySchema' => $schema,
+            'AttributeDefinitions' => $attrs,
             'ProvisionedThroughput' => $tput,
             );
 
